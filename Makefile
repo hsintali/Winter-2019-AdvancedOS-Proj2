@@ -183,6 +183,7 @@ UPROGS=\
 	_wc\
 	_zombie\
 	_frisbee\
+	_frisbee_arraylock\
 	# cs202
 
 fs.img: mkfs README $(UPROGS)
