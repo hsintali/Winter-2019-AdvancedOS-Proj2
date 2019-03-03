@@ -143,7 +143,8 @@ tags: $(OBJS) entryother.S _init
 vectors.S: vectors.pl
 	./vectors.pl > vectors.S
 
-ULIB = ulib.o usys.o printf.o umalloc.o
+	                                    # cs202
+ULIB = ulib.o usys.o printf.o umalloc.o thread.o
 
 _%: %.o $(ULIB)
 	$(LD) $(LDFLAGS) -N -e main -Ttext 0 -o $@ $^
@@ -181,6 +182,8 @@ UPROGS=\
 	_usertests\
 	_wc\
 	_zombie\
+	_frisbee\
+	# cs202
 
 fs.img: mkfs README $(UPROGS)
 	./mkfs fs.img README $(UPROGS)

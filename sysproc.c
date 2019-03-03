@@ -89,3 +89,19 @@ sys_uptime(void)
   release(&tickslock);
   return xticks;
 }
+
+// cs202
+int 
+sys_clone(void)
+{
+	int size = 0;
+	void *stack;
+	
+	if(argptr(0, (char **)&stack, size) < 0)
+		return -1;
+		
+	if(argint(1, &size) < 0)
+		return -1;
+		
+	return clone(stack, size);
+}

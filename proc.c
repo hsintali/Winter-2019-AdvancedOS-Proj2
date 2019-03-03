@@ -111,6 +111,8 @@ found:
   p->context = (struct context*)sp;
   memset(p->context, 0, sizeof *p->context);
   p->context->eip = (uint)forkret;
+  
+  p->threadCount = 1; // cs202
 
   return p;
 }
@@ -231,15 +233,31 @@ exit(void)
   struct proc *p;
   int fd;
 
+  // cs202
+  int threadCount = 0;
+  if(curproc->isThread)
+  {
+	  threadCount = curproc->parent->threadCount;
+  }
+  else
+  {
+	  threadCount = curproc->threadCount;
+  }
+  
   if(curproc == initproc)
     panic("init exiting");
 
-  // Close all open files.
-  for(fd = 0; fd < NOFILE; fd++){
-    if(curproc->ofile[fd]){
-      fileclose(curproc->ofile[fd]);
-      curproc->ofile[fd] = 0;
-    }
+  // cs202 Close all open files.
+  if(threadCount == 1)
+  {
+	  for(fd = 0; fd < NOFILE; fd++)
+	  {
+		  if(curproc->ofile[fd])
+		  {
+			  fileclose(curproc->ofile[fd]);
+			  curproc->ofile[fd] = 0;
+		  }
+	  }
   }
 
   begin_op();
@@ -275,21 +293,35 @@ wait(void)
   struct proc *p;
   int havekids, pid;
   struct proc *curproc = myproc();
-  
+
   acquire(&ptable.lock);
   for(;;){
     // Scan through table looking for exited children.
     havekids = 0;
+	
+	// cs202
+	int threadCount = 0;
+	if(curproc->isThread)
+    {
+		threadCount = curproc->parent->threadCount;
+    }
+    else
+    {
+		threadCount = curproc->threadCount;
+    }
+  
     for(p = ptable.proc; p < &ptable.proc[NPROC]; p++){
       if(p->parent != curproc)
         continue;
       havekids = 1;
+	  
       if(p->state == ZOMBIE){
         // Found one.
         pid = p->pid;
         kfree(p->kstack);
         p->kstack = 0;
-        freevm(p->pgdir);
+        if(threadCount == 1) freevm(p->pgdir); // cs202
+		if(curproc->isThread) --curproc->threadCount; // cs202
         p->pid = 0;
         p->parent = 0;
         p->name[0] = 0;
@@ -531,4 +563,68 @@ procdump(void)
     }
     cprintf("\n");
   }
+}
+
+// cs202
+int 
+clone(void* stack,int size)
+{
+	int i, pid;
+	struct proc *np;
+	struct proc *curproc = myproc(); 	
+	
+	// Allocate thread
+    if((np = allocproc()) == 0){
+        return -1;
+    }
+	
+	//Copy process state from proc
+    np->pgdir = curproc->pgdir;
+    np->sz = curproc->sz;
+    np->parent = curproc;
+    *np->tf = *curproc->tf;
+	
+	// Clear %eax so that fork returns 0 in the child.
+    np->tf->eax = 0;
+	
+	np->isThread = 1;
+	++curproc->threadCount;
+
+	// "Programming from the Ground Up" Chapter 4
+	// esp: current top of the stack; the bottom of the stack’s memory
+	// ebp: current base pointer register
+	// The stack looks like:
+	// Parameter 2 <--- 12(%ebp)
+	// Parameter 1 <--- 8(%ebp)
+	// Return Address <--- 4(%ebp)
+	// Old %ebp <--- (%ebp)
+	// Local Variable 1 <--- -4(%ebp)
+    // Local Variable 2 <--- -8(%ebp) and (%esp)
+
+	void *stackTop = (void*)curproc->tf->esp;
+	void *stackBottom = (void*)curproc->tf->ebp + 16;
+	uint copySize = (uint)(stackBottom - stackTop);
+	
+	np->tf->esp = (uint)(stack + size - copySize);
+	np->tf->ebp = (uint)(stack + size - 16);
+
+	memmove(stack + size - copySize, stackTop, copySize);
+
+	for(i = 0; i < NOFILE; i++)
+		if(curproc->ofile[i])
+			np->ofile[i] = filedup(curproc->ofile[i]);
+	
+	np->cwd = idup(curproc->cwd);
+	
+	safestrcpy(np->name, curproc->name, sizeof(curproc->name));
+	
+	pid = np->pid;
+	
+	acquire(&ptable.lock);
+	
+	np->state = RUNNABLE;
+	
+	release(&ptable.lock);
+	
+	return pid;
 }
